@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>АЗС Петрозаводска — Топливо онлайн</title>
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; background: #1a1a2e; }
+        #container { width: 100vw; height: 100vh; position: relative; }
+        #map { width: 100%; height: 100%; }
+        
+        #loadingScreen {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 9999; transition: opacity 0.5s;
+        }
+        #loadingScreen.hidden { opacity: 0; pointer-events: none; }
+        .loader { text-align: center; color: white; }
+        .loader .icon { font-size: 60px; animation: bounce 1s infinite; }
+        .loader .text { font-size: 18px; margin-top: 15px; letter-spacing: 2px; }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+        
+        #panel {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(22, 33, 62, 0.85); backdrop-filter: blur(20px);
+            padding: 20px; border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4); z-index: 1000;
+            width: 280px; color: white; border: 1px solid rgba(255,255,255,0.1);
+        }
+        #panel h2 { font-size: 20px; font-weight: 800; background: linear-gradient(135deg, #ffcc00, #ff9500); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        #panel .subtitle { font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 15px; }
+        #panel button {
+            width: 100%; padding: 10px 14px; margin: 4px 0;
+            border: none; border-radius: 12px; cursor: pointer;
+            font-weight: 600; font-size: 12px; color: white;
+            transition: 0.3s; display: flex; align-items: center; gap: 8px;
+        }
+        #panel button:active { transform: scale(0.96); }
+        #panel button:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .btn-all { background: rgba(255,255,255,0.15); }
+        .btn-open { background: linear-gradient(135deg, #28a745, #20c997); }
+        .btn-closed { background: linear-gradient(135deg, #dc3545, #ff6b6b); }
+        .btn-geo { background: linear-gradient(135deg, #6c63ff, #007bff); }
+        .btn-nearest { background: linear-gradient(135deg, #ff9500, #ff6b00); }
+        .btn-clear { background: rgba(255,255,255,0.1); }
+        .btn-update { background: rgba(255,255,255,0.1); font-size: 10px; }
+        .stats { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; font-size: 10px; color: rgba(255,255,255,0.6); }
+        .stat { background: rgba(255,255,255,0.05); padding: 8px; border-radius: 10px; text-align: center; }
+        .stat .num { font-size: 20px; font-weight: 700; color: white; }
+        #updateBadge {
+            position: fixed; bottom: 20px; right: 20px;
+            background: rgba(0,0,0,0.7); color: white;
+            padding: 8px 16px; border-radius: 20px; font-size: 11px;
+            z-index: 1000; backdrop-filter: blur(10px);
+        }
+        
+        .marker-badge {
+            width: 40px; height: 40px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; color: white; border: 3px solid white;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5); animation: pulse 2s infinite;
+        }
+        .marker-badge.closed { animation: none; opacity: 0.6; }
+        .marker-badge.breaker { animation: pulseYellow 2s infinite; }
+        .marker-badge.user { width: 24px; height: 24px; background: #007bff !important; border: 3px solid white; animation: pulseBlue 1.5s infinite; }
+        @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(40,167,69,0.4)} 50%{box-shadow:0 0 0 18px rgba(40,167,69,0)} }
+        @keyframes pulseYellow { 0%,100%{box-shadow:0 0 0 0 rgba(255,193,7,0.4)} 50%{box-shadow:0 0 0 18px rgba(255,193,7,0)} }
+        @keyframes pulseBlue { 0%,100%{box-shadow:0 0 0 0 rgba(0,123,255,0.5)} 50%{box-shadow:0 0 0 14px rgba(0,123,255,0)} }
+        
+        .popup-card { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-width: 260px; background: white; padding: 15px; border-radius: 12px; color: #1a1a2e; }
+        .popup-card .brand { font-size: 16px; font-weight: 700; }
+        .popup-card .addr { font-size: 13px; color: #555; margin: 5px 0; }
+        .status-badge { display: inline-block; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin: 5px 0; }
+        .status-open { background: #d4edda; color: #155724; }
+        .status-closed { background: #f8d7da; color: #721c24; }
+        .status-break { background: #fff3cd; color: #856404; }
+        .fuel-section { margin: 10px 0; }
+        .fuel-section .title { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+        .fuel-row { display: flex; gap: 6px; flex-wrap: wrap; }
+        .fuel-badge { padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+        .fuel-yes { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .fuel-no { background: #f8d7da; color: #721c24; text-decoration: line-through; border: 1px solid #f5c6cb; }
+        .popup-card .time { font-size: 12px; color: #555; background: #f0f0f0; padding: 5px 10px; border-radius: 8px; display: inline-block; margin: 8px 0; }
+        .popup-card .note { font-size: 12px; color: #856404; background: #fff3cd; padding: 8px 12px; border-radius: 8px; margin: 8px 0; font-weight: 500; }
+        .popup-btn { display: block; margin-top: 10px; padding: 10px; background: linear-gradient(135deg, #007bff, #6c63ff); color: white; text-align: center; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; width: 100%; }
+        @media (max-width:600px){ #panel{top:10px;left:10px;right:10px;width:auto;padding:15px} }
+    </style>
+</head>
+<body>
+    
+    <div id="loadingScreen"><div class="loader"><div class="icon">⛽</div><div class="text">ЗАГРУЖАЕМ АЗС</div></div></div>
+    
+    <div id="container">
+        <div id="panel">
+            <h2>⛽ Топливо ПТЗ</h2>
+            <div class="subtitle">Петрозаводск • данные бота ВК</div>
+            <button class="btn-all" onclick="showAll()">📍 Все заправки</button>
+            <button class="btn-open" onclick="filterOpen()">🟢 Открытые</button>
+            <button class="btn-closed" onclick="filterClosed()">🔴 Закрытые</button>
+            <button class="btn-geo" onclick="showMyLocation()">🔵 Моя геолокация</button>
+            <button class="btn-nearest" onclick="routeToNearest()">🧭 Маршрут к ближайшей</button>
+            <button class="btn-clear" onclick="clearRoute()">✕ Сбросить</button>
+            <button class="btn-update" onclick="updateData()">🔄 Обновить (2ГИС)</button>
+            <div class="stats">
+                <div class="stat"><div class="num" id="totalCount">38</div>всего</div>
+                <div class="stat"><div class="num" id="openCount">—</div>открыто</div>
+                <div class="stat"><div class="num" id="closedCount">—</div>закрыто</div>
+            </div>
+        </div>
+        <div id="map"></div>
+    </div>
+    
+    <div id="updateBadge">🕐 Данные из бота ВК</div>
+
+    <script src="https://maps.api.2gis.ru/2.0/loader.js?pkg=full"></script>
+    
+    <script>
+        const API_KEY = '796dce23-f02e-4741-b8fe-c2e1ad960b42';
+        const FUEL_TYPES = ['92', '95', '98', 'DT', 'Газ'];
+        
+        // ТОЧНО по боту ВК (обновлено сейчас)
+        const stations = [
+            // === ЛУКОЙЛ ===
+            { name:"Лукойл", addr:"Шуйское ш., 3", lat:61.809587, lon:34.288928, status:"open", fuel:{92:false,95:false,DT:true}, time:"Круглосуточно" },
+            { name:"Лукойл", addr:"Лесной пр-т, 53Б", lat:61.784065, lon:34.302505, status:"open", fuel:{92:true,95:true,DT:true}, time:"Круглосуточно" },
+            { name:"Лукойл", addr:"Лососинское ш., 48", lat:61.76139, lon:34.300821, status:"closed", fuel:{}, note:"Бензовоз в пути из СПБ" },
+            { name:"Лукойл", addr:"пос. Новая Вилга", lat:61.821271, lon:34.145773, status:"break", breakTime:"14:00-15:00", fuel:{92:true,95:true,DT:true}, time:"Перерыв 14:00-15:00" },
+            { name:"Лукойл", addr:"ул. Правды, 23", lat:61.775406, lon:34.393496, status:"open", fuel:{92:true,95:true,DT:true}, time:"Круглосуточно" },
+            // === РОСНЕФТЬ ===
+            { name:"Роснефть", addr:"ул. Ломоносова, 1", lat:61.768008, lon:34.390582, status:"open", fuel:{92:true,95:true,DT:true}, time:"Круглосуточно" },
+            { name:"Роснефть", addr:"ул. Высотная, 11", lat:61.7955, lon:34.3712, status:"open", fuel:{92:true,95:true,DT:true}, time:"Круглосуточно" },
+            { name:"Роснефть", addr:"Лесной пр-т, 79", lat:61.792332, lon:34.298814, status:"open", fuel:{92:true,95:true,DT:true}, time:"Круглосуточно" },
+            { name:"Роснефть", addr:"Лососинское ш., 12а", lat:61.771146, lon:34.331702, status:"open", fuel:{92:true,95:true,DT:true}, time:"Круглосуточно" },
+            { name:"Роснефть", addr:"Комсомольский пр-т, 22", lat:61.757929, lon:34.354326, status:"break", breakTime:"13:00-14:00", fuel:{92:true,95:true,DT:true}, time:"Перерыв 13:00-14:00" },
+            { name:"Роснефть", addr:"Университетская ул., 1", lat:61.777314, lon:34.307761, status:"closed", fuel:{} },
+            { name:"Роснефть", addr:"Лесной пр-т, 38/1", lat:61.770744, lon:34.31856, status:"open", fuel:{92:true,95:true,DT:true}, time:"Круглосуточно" },
+            // === ГАЗПРОМНЕФТЬ ===
+            { name:"Газпромнефть", addr:"Высотная ул., 4", lat:61.773844, lon:34.336592, status:"open", fuel:{92:true,95:true,DT:true}, time:"Круглосуточно" },
+            // === ОПТИ ===
+            { name:"Опти", addr:"Казарменская ул., 1", lat:61.783959, lon:34.380373, status:"closed", fuel:{} },
+            { name:"Опти", addr:"ул. Правды, 2", lat:61.784042, lon:34.380458, status:"closed", fuel:{} },
+            { name:"Опти", addr:"Шуйское ш., 10а", lat:61.817008, lon:34.282165, status:"open", fuel:{92:true,95:true,DT:true}, time:"" },
+            // === ТАТНЕФТЬ ===
+            { name:"Татнефть", addr:"ул. Репникова, 1а", lat:61.764098, lon:34.413958, status:"closed", fuel:{} },
+            { name:"Татнефть", addr:"Суоярвское ш., 46", lat:61.820156, lon:34.2182, status:"open", fuel:{}, time:"" },
+            { name:"Татнефть", addr:"Шуйское ш., 10/1", lat:61.814674, lon:34.285629, status:"open", fuel:{}, time:"" },
+            // === ОСТАЛЬНЫЕ (из 2ГИС, статусы неизвестны — считаем открытыми) ===
+            { name:"Abs automat", addr:"ул. Попова, 3а", lat:61.763795, lon:34.301971, status:"open", fuel:{}, time:"" },
+            { name:"Китэк", addr:"Мелиоративный, Лесная ул., 2а/1", lat:61.867688, lon:34.233128, status:"open", fuel:{}, time:"" },
+            { name:"АЗС", addr:"Карельский пр-т, 2а", lat:61.758845, lon:34.376739, status:"open", fuel:{}, time:"" },
+            { name:"Abs automat", addr:"Первомайский пр-т, 81", lat:61.80041, lon:34.310921, status:"open", fuel:{}, time:"" },
+            { name:"Panex", addr:"Заводская ул., 5Б", lat:61.808797, lon:34.296355, status:"open", fuel:{}, time:"", gas:true },
+            { name:"Арис АЗС", addr:"ул. Чапаева, 1а", lat:61.787275, lon:34.340232, status:"open", fuel:{}, time:"" },
+            { name:"Карелгаз", addr:"Шуйское ш. 4 км, 96а", lat:61.849246, lon:34.2669, status:"open", fuel:{}, time:"", gas:true },
+            { name:"Арис АЗС", addr:"Суоярвское ш., 51", lat:61.821118, lon:34.214555, status:"open", fuel:{}, time:"" },
+            { name:"Panex", addr:"Шуйское ш., 18/1", lat:61.824742, lon:34.26266, status:"open", fuel:{}, time:"", gas:true },
+            { name:"Global Oil", addr:"Соломенское ш., 22", lat:61.840529, lon:34.328227, status:"open", fuel:{}, time:"" },
+            { name:"Panex", addr:"ул. Чапаева, 1в", lat:61.787743, lon:34.339475, status:"open", fuel:{}, time:"", gas:true },
+            { name:"Panex", addr:"ул. Попова, 7а/1", lat:61.763554, lon:34.301387, status:"open", fuel:{}, time:"", gas:true },
+            { name:"Panex", addr:"Вытегорское ш., 51а", lat:61.75869, lon:34.41543, status:"open", fuel:{}, time:"", gas:true },
+            { name:"Севернефтепродукт", addr:"ул. Сулажгорского КЗ, 53", lat:61.837303, lon:34.204511, status:"open", fuel:{}, time:"" },
+            { name:"Социальная ТК", addr:"Вытегорское ш., 51", lat:61.758687, lon:34.415909, status:"open", fuel:{}, time:"" },
+            { name:"Робот-АЗС", addr:"Петрозаводск", lat:61.772869, lon:34.423674, status:"open", fuel:{}, time:"" },
+            { name:"Социальная ТК", addr:"Новосулажгорская ул., 20Б", lat:61.806682, lon:34.288001, status:"open", fuel:{}, time:"" },
+            { name:"Карелгаз", addr:"Лососинское ш., 48/1", lat:61.761022, lon:34.299353, status:"open", fuel:{}, time:"", gas:true },
+            { name:"Газпром ГМТ", addr:"ул. Онежской Флотилии, 14", lat:61.766617, lon:34.437089, status:"open", fuel:{}, time:"", gas:true },
+            { name:"Panex", addr:"Вилга, Прионежское ш., 2а", lat:61.816232, lon:34.103201, status:"open", fuel:{}, time:"" },
+            { name:"АЗС", addr:"Ленинградская ул., 13/1", lat:61.79359, lon:34.352763, status:"open", fuel:{}, time:"" }
+        ];
+
+        let map, markers=[], routeLine, userMarker, userPos=null;
+
+        setTimeout(()=>document.getElementById('loadingScreen').classList.add('hidden'),1200);
+        setTimeout(()=>document.getElementById('updateBadge').textContent='✅ Данные из бота ВК',1500);
+
+        DG.then(()=>{
+            map=DG.map('map',{center:[61.78,34.34],zoom:12,fullscreenControl:true});
+            showAll();
+        });
+
+        function makeIcon(s,isUser=false){
+            if(isUser) return DG.divIcon({html:'<div class="marker-badge user"></div>',iconSize:[24,24],iconAnchor:[12,12]});
+            const color=s.status==='open'?'#28a745':s.status==='break'?'#ffc107':'#dc3545';
+            const icon=s.gas?'💨':'⛽';
+            const cls=s.status==='closed'?'closed':s.status==='break'?'breaker':'';
+            return DG.divIcon({html:`<div class="marker-badge ${cls}" style="background:${color};">${icon}</div>`,iconSize:[40,40],iconAnchor:[20,20]});
+        }
+
+        function makePopup(s){
+            const sc=s.status==='open'?'status-open':s.status==='break'?'status-break':'status-closed';
+            const st=s.status==='open'?'🟢 Работает':s.status==='break'?`🟡 Перерыв ${s.breakTime||''}`:'🔴 Закрыто';
+            let fuelYes='',fuelNo='';
+            if(s.fuel&&Object.keys(s.fuel).length>0){
+                FUEL_TYPES.forEach(t=>{
+                    if(s.fuel[t]===true)fuelYes+=`<span class="fuel-badge fuel-yes">${t}</span>`;
+                    else if(s.fuel[t]===false)fuelNo+=`<span class="fuel-badge fuel-no">${t}</span>`;
+                });
+            }
+            const fuelSection=(fuelYes||fuelNo)?`<div class="fuel-section">${fuelYes?`<div class="title">✅ В наличии</div><div class="fuel-row">${fuelYes}</div>`:''}${fuelNo?`<div class="title" style="margin-top:6px;">❌ Нет</div><div class="fuel-row">${fuelNo}</div>`:''}</div>`:'';
+            return `
+                <div class="popup-card">
+                    <div class="brand">${s.name}</div>
+                    <div class="addr">📍 ${s.addr}</div>
+                    <span class="status-badge ${sc}">${st}</span>
+                    ${fuelSection}
+                    ${s.time?`<div class="time">🕐 ${s.time}</div>`:''}
+                    ${s.note?`<div class="note">⚠ ${s.note}</div>`:''}
+                    <button class="popup-btn" onclick="window._buildRoute(${s.lat},${s.lon})">🧭 Построить маршрут</button>
+                </div>`;
+        }
+
+        function renderStations(list){
+            markers.forEach(m=>map.removeLayer(m));markers=[];
+            let open=0,closed=0;
+            list.forEach(s=>{
+                if(s.status==='open')open++;
+                if(s.status==='closed')closed++;
+                const m=DG.marker([s.lat,s.lon],{icon:makeIcon(s)});
+                m.bindPopup(makePopup(s));m.addTo(map);markers.push(m);
+            });
+            document.getElementById('totalCount').textContent=list.length;
+            document.getElementById('openCount').textContent=open;
+            document.getElementById('closedCount').textContent=closed;
+        }
+
+        function showAll(){renderStations(stations);}
+        function filterOpen(){renderStations(stations.filter(s=>s.status==='open'));}
+        function filterClosed(){renderStations(stations.filter(s=>s.status==='closed'));}
+        
+        window._buildRoute=function(lat,lon){
+            clearRoute();
+            if(userPos){
+                routeLine=DG.polyline([userPos,[lat,lon]],{color:'#007bff',weight:4,dashArray:'10 10',opacity:0.8}).addTo(map);
+                map.fitBounds(routeLine.getBounds().pad(0.1));
+            }else{alert('Сначала нажмите 🔵 Моя геолокация!');}
+        };
+        
+        function routeToNearest(){
+            if(!userPos){alert('Сначала нажмите 🔵 Моя геолокация!');return;}
+            let nearest=null,minDist=Infinity;
+            stations.filter(s=>s.status==='open').forEach(s=>{
+                const d=Math.hypot(s.lat-userPos[0],s.lon-userPos[1]);
+                if(d<minDist){minDist=d;nearest=s;}
+            });
+            if(nearest)window._buildRoute(nearest.lat,nearest.lon);
+        }
+        
+        function clearRoute(){if(routeLine){map.removeLayer(routeLine);routeLine=null;}}
+        
+        function showMyLocation(){
+            if(navigator.geolocation){
+                navigator.geolocation.getCurrentPosition(pos=>{
+                    userPos=[pos.coords.latitude,pos.coords.longitude];
+                    if(userMarker)map.removeLayer(userMarker);
+                    userMarker=DG.marker(userPos,{icon:makeIcon(null,true)}).bindPopup('📍 Вы здесь').addTo(map);
+                    map.setView(userPos,14);
+                    document.getElementById('updateBadge').textContent='📍 Местоположение определено';
+                },()=>alert('❌ Геолокация недоступна'));
+            }
+        }
+        
+        async function updateData(){
+            document.getElementById('updateBadge').textContent='🔄 Обновляем из 2ГИС...';
+            try{
+                let allItems=[];
+                for(let page=1;page<=4;page++){
+                    const url=`https://catalog.api.2gis.com/3.0/items?key=${API_KEY}&q=АЗС&point=34.3600,61.7800&radius=20000&type=branch&fields=items.point,items.address,items.name,items.org&page_size=10&page=${page}`;
+                    const res=await fetch(url);
+                    const data=await res.json();
+                    if(data.result?.items)allItems.push(...data.result.items);
+                }
+                if(allItems.length>0){
+                    allItems.forEach(item=>{
+                        const existing=stations.find(s=>s.addr===item.address_name||s.name===item.name);
+                        if(existing){existing.lat=item.point.lat;existing.lon=item.point.lon;}
+                    });
+                    showAll();
+                    document.getElementById('updateBadge').textContent='✅ Обновлено: '+new Date().toLocaleTimeString();
+                }
+            }catch(e){document.getElementById('updateBadge').textContent='❌ Ошибка';}
+        }
+        
+        setInterval(updateData,300000);
+        setTimeout(showMyLocation,2000);
+    </script>
+</body>
+</html>
